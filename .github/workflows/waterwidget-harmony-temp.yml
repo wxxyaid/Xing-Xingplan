@@ -130,6 +130,21 @@ jobs:
           s = s.replace(old, new, 1)
           auto_tasks.write_text(s)
 
+          # POST_NOTIFICATIONS only exists as a runtime permission on Android 13+.
+          auto_settings = Path("src/main/kotlin/com/water/widget/ui/AutoTaskSettings.kt")
+          s = auto_settings.read_text()
+          assert 'import android.os.Build\n' not in s
+          s = s.replace('import android.net.Uri\n',
+                        'import android.net.Uri\nimport android.os.Build\n', 1)
+          old = '                        if (it) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)\n'
+          assert s.count(old) == 1
+          new = '''                        if (it && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                              notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                          }
+          '''
+          s = s.replace(old, new, 1)
+          auto_settings.write_text(s)
+
           # Avoid predictive-back opt-in on the old Android compatibility layer.
           manifest = Path("src/main/AndroidManifest.xml")
           s = manifest.read_text()

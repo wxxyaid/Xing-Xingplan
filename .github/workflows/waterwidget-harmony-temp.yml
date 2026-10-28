@@ -189,7 +189,7 @@ jobs:
           grep "package: name='com.water.widget'" /tmp/badging.txt
           grep "versionCode='23'" /tmp/badging.txt
           grep "versionName='5.5.0'" /tmp/badging.txt
-          grep "sdkVersion:'26'" /tmp/badging.txt
+          grep "minSdkVersion:'26'" /tmp/badging.txt
 
       - name: Collect official Android build tools for final local signing audit
         run: |

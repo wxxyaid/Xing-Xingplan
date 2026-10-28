@@ -200,9 +200,14 @@ jobs:
       - name: Collect official Android build tools for final local signing audit
         run: |
           mkdir -p compatibility-tools
-          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" compatibility-tools/
-          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" compatibility-tools/
-          cp "$ANDROID_HOME/build-tools/36.0.0/aapt2" compatibility-tools/
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          cp "$BT/lib/apksigner.jar" compatibility-tools/
+          cp "$BT/zipalign" compatibility-tools/
+          cp "$BT/aapt2" compatibility-tools/
+          ldd "$BT/zipalign" | tee compatibility-tools/zipalign-ldd.txt
+          LIBCPP="$(ldd "$BT/zipalign" | awk '/libc\+\+\.so/ {print $3; exit}')"
+          test -n "$LIBCPP" -a -f "$LIBCPP"
+          cp "$LIBCPP" compatibility-tools/libc++.so
 
       - name: Upload compatibility APK and audit inputs
         uses: actions/upload-artifact@v4

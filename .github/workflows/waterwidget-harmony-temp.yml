@@ -113,6 +113,23 @@ jobs:
               assert token not in s, f"blur token still present: {token}"
           dashboard.write_text(s)
 
+          # Android 12 introduced exact-alarm special access. On API 26-30
+          # exact alarms do not use canScheduleExactAlarms(), so return true there.
+          auto_tasks = Path("src/main/kotlin/com/water/widget/AutoTasks.kt")
+          s = auto_tasks.read_text()
+          assert 'import android.os.Build\n' not in s
+          s = s.replace('import android.content.Intent\n',
+                        'import android.content.Intent\nimport android.os.Build\n', 1)
+          old = '    fun permitted(context: Context) = context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()\n'
+          assert s.count(old) == 1
+          new = '''    fun permitted(context: Context): Boolean {
+              if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+              return context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+          }
+          '''
+          s = s.replace(old, new, 1)
+          auto_tasks.write_text(s)
+
           # Avoid predictive-back opt-in on the old Android compatibility layer.
           manifest = Path("src/main/AndroidManifest.xml")
           s = manifest.read_text()

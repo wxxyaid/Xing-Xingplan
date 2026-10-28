@@ -143,6 +143,12 @@ jobs:
                           }
           '''
           s = s.replace(old, new, 1)
+          # Also guard the Android 12-only exact-alarm settings action itself.
+          old = '                if (enabled && !permitted) {\n'
+          assert s.count(old) == 1
+          s = s.replace(old,
+              '                if (enabled && !permitted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {\n',
+              1)
           auto_settings.write_text(s)
 
           # Avoid predictive-back opt-in on the old Android compatibility layer.

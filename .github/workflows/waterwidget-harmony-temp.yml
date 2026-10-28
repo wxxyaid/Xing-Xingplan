@@ -1,0 +1,173 @@
+name: Temporary WaterWidget Harmony 5.5 build
+
+on:
+  push:
+    branches:
+      - tmp-waterwidget-harmony-550-build
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout upstream WaterWidget 5.5.0
+        uses: actions/checkout@v4
+        with:
+          repository: nocookies111/life-798
+          ref: 86566185aac1138e80c49ff0267d42a18f3452ec
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Apply HarmonyOS 3 / API26 source compatibility patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path("app/build.gradle.kts")
+          s = gradle.read_text()
+          assert 'minSdk = 33' in s
+          s = s.replace('minSdk = 33', 'minSdk = 26', 1)
+          blur_dep = '    implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.3")\n'
+          assert blur_dep in s
+          s = s.replace(blur_dep, '', 1)
+          gradle.write_text(s)
+
+          dashboard = Path("src/main/kotlin/com/water/widget/ui/DashboardScreen.kt")
+          s = dashboard.read_text()
+          for line in [
+              'import top.yukonga.miuix.kmp.blur.BlendColorEntry\n',
+              'import top.yukonga.miuix.kmp.blur.BlurColors\n',
+              'import top.yukonga.miuix.kmp.blur.LayerBackdrop\n',
+              'import top.yukonga.miuix.kmp.blur.layerBackdrop\n',
+              'import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop\n',
+              'import top.yukonga.miuix.kmp.blur.textureBlur\n',
+          ]:
+              assert line in s, line
+              s = s.replace(line, '', 1)
+
+          backdrop = '''    val blurBackdrop = rememberLayerBackdrop {
+              drawRect(colors.background)
+              drawContent()
+          }
+          '''
+          assert backdrop in s
+          s = s.replace(backdrop, '', 1)
+
+          layer = '''                .overscroll(mineOverscrollEffect)
+                          .layerBackdrop(blurBackdrop)
+          '''
+          assert layer in s
+          s = s.replace(layer, '                .overscroll(mineOverscrollEffect)\n', 1)
+
+          call = '''            backdrop = blurBackdrop,
+                      modifier = Modifier.align(Alignment.BottomCenter)
+          '''
+          assert call in s
+          s = s.replace(call, '            modifier = Modifier.align(Alignment.BottomCenter)\n', 1)
+
+          sig = '''    onSelect: (DashboardTab) -> Unit,
+              backdrop: LayerBackdrop,
+              modifier: Modifier = Modifier
+          '''
+          assert sig in s
+          s = s.replace(sig, '''    onSelect: (DashboardTab) -> Unit,
+              modifier: Modifier = Modifier
+          ''', 1)
+
+          blur = '''        modifier = modifier
+                      .fillMaxWidth()
+                      .textureBlur(
+                          backdrop = backdrop,
+                          shape = RectangleShape,
+                          blurRadius = 44f,
+                          colors = BlurColors(
+                              blendColors = listOf(BlendColorEntry(colors.surface.copy(alpha = 0.64f)))
+                          )
+                      )
+                      .windowInsetsPadding(WindowInsets.navigationBars),
+          '''
+          assert blur in s
+          s = s.replace(blur, '''        modifier = modifier
+                      .fillMaxWidth()
+                      .windowInsetsPadding(WindowInsets.navigationBars),
+          ''', 1)
+
+          transparent = '        color = Color.Transparent,\n        contentColor = colors.onSurface,'
+          assert transparent in s
+          s = s.replace(transparent, '        color = colors.surface,\n        contentColor = colors.onSurface,', 1)
+          dashboard.write_text(s)
+
+          # Disable predictive-back opt-in for maximum old-framework compatibility.
+          manifest = Path("src/main/AndroidManifest.xml")
+          s = manifest.read_text()
+          assert 'android:enableOnBackInvokedCallback="true"' in s
+          s = s.replace('android:enableOnBackInvokedCallback="true"',
+                        'android:enableOnBackInvokedCallback="false"', 1)
+          manifest.write_text(s)
+
+          # Offline placeholders only; no user/account tokens and no production secrets are committed.
+          Path("secrets.properties").write_text("""API_GATEWAY=GGGGGGGGGGGGGGGGGGGGGGGGGGGGG
+          SIGN_SALT=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+          APP_SIGN_SALT=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          MINI_SIGN_SALT=MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+          API_CID=CCCCCCCCCCCCCCCCCCCCCC
+          """.replace("          ", ""))
+          PY
+
+      - name: Confirm source identity
+        run: |
+          grep -n 'versionName = "5.5.0"' app/build.gradle.kts
+          grep -n 'versionCode = 23' app/build.gradle.kts
+          grep -n 'minSdk = 26' app/build.gradle.kts
+          ! grep -R "miuix-blur-android" -n app/build.gradle.kts
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Run Android lint
+        run: ./gradlew lintDebug --no-daemon --stacktrace
+
+      - name: Build API26 debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK with Android SDK tools
+        shell: bash
+        run: |
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | tee /tmp/apksigner.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$apk" | tee /tmp/badging.txt
+          grep "package: name='com.water.widget'" /tmp/badging.txt
+          grep "versionCode='23'" /tmp/badging.txt
+          grep "versionName='5.5.0'" /tmp/badging.txt
+          grep "sdkVersion:'26'" /tmp/badging.txt
+
+      - name: Upload compatibility APK and audit inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: WaterWidget-5.5.0-HarmonyOS3-API26-source-build
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+            /tmp/apksigner.txt
+            /tmp/badging.txt
+          if-no-files-found: warn

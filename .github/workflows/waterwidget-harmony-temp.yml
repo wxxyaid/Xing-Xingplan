@@ -40,6 +40,8 @@ jobs:
           "$SDKMANAGER" "platforms;android-37.0" "build-tools;36.0.0"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -121,7 +123,7 @@ jobs:
 
           # Build-time placeholders only. User/account tokens are never used here.
           Path("secrets.properties").write_text(
-              "API_GATEWAY=" + "G"*29 + "\n" +
+              "API_GATEWAY=https://xx.example.com/api/v1\n" +
               "SIGN_SALT=" + "S"*31 + "\n" +
               "APP_SIGN_SALT=" + "A"*31 + "\n" +
               "MINI_SIGN_SALT=" + "M"*31 + "\n" +
@@ -157,6 +159,13 @@ jobs:
           grep "versionName='5.5.0'" /tmp/badging.txt
           grep "sdkVersion:'26'" /tmp/badging.txt
 
+      - name: Collect official Android build tools for final local signing audit
+        run: |
+          mkdir -p compatibility-tools
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" compatibility-tools/
+          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" compatibility-tools/
+          cp "$ANDROID_HOME/build-tools/36.0.0/aapt2" compatibility-tools/
+
       - name: Upload compatibility APK and audit inputs
         uses: actions/upload-artifact@v4
         with:
@@ -167,4 +176,5 @@ jobs:
             app/build/reports/lint-results-debug.txt
             /tmp/apksigner.txt
             /tmp/badging.txt
+            compatibility-tools/**
           if-no-files-found: warn
